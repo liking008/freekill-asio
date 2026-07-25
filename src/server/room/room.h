@@ -164,7 +164,6 @@ private:
 
   void setPlayerReady(ServerPlayer &, bool ready);
 
-  // handle packet
   void quitRoom(ServerPlayer &, const Packet &);
   void addRobotRequest(ServerPlayer &, const Packet &);
   void kickPlayer(ServerPlayer &, const Packet &);

@@ -9,7 +9,6 @@ class ServerPlayer;
 
 class Lobby final : public RoomBase {
 private:
-  // connId -> true
   std::unordered_map<int, bool> players;
 
 public:
@@ -30,7 +29,6 @@ public:
   void respondInvite(ServerPlayer &, const Packet &);
 
 private:
-  // for handle packet
   void updateAvatar(ServerPlayer &, const Packet &);
   void updatePassword(ServerPlayer &, const Packet &);
   void createRoom(ServerPlayer &, const Packet &);
