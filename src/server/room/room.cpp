@@ -11,8 +11,11 @@
 #include "server/user/user_manager.h"
 #include "core/c-wrapper.h"
 
+#include <nlohmann/json.hpp>
+
 namespace asio = boost::asio;
 
+using json = nlohmann::json;
 using std::ranges::find;
 
 Room::Room() {
