@@ -343,11 +343,30 @@ void Lobby::handlePacket(ServerPlayer &sender, const Packet &packet) {
     {"LobbyTask", &Lobby::handleTask},
     {"Chat", &Lobby::chat},
     {"ReadGlobalSaveState", &Lobby::readGlobalSaveState},
+    {"RespondInvite", &Lobby::respondInvite},
   };
 
   auto iter = lobby_actions.find(packet.command);
   if (iter != lobby_actions.end()) {
     auto func = iter->second;
     (this->*func)(sender, packet);
+  }
+}
+
+void Lobby::respondInvite(ServerPlayer &sender, const Packet &packet) {
+  cbor_data cbuf = (cbor_data)packet.cborData.data();
+  size_t len = packet.cborData.size();
+  std::string_view sv;
+  auto dres = cbor_stream_decode(cbuf, len, &Cbor::stringCallbacks, &sv);
+  if (dres.read == 0) return;
+  auto j = json::parse(sv);
+  int inviteId = j.value("inviteId", 0);
+  if (!inviteId) return;
+
+  auto &rm = Server::instance().room_manager();
+  int roomId = inviteId / 1000000;
+  auto room = rm.findRoom(roomId).lock();
+  if (room) {
+    room->respondInvite(sender, packet);
   }
 }

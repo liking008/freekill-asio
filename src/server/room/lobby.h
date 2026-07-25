@@ -36,6 +36,7 @@ private:
   void observeRoom(ServerPlayer &, const Packet &);
   void refreshRoomList(ServerPlayer &, const Packet &);
   void handleTask(ServerPlayer &, const Packet &);
+  void respondInvite(ServerPlayer &, const Packet &);
 
   void joinRoom(ServerPlayer &, const Packet &, bool ob = false);
 };
