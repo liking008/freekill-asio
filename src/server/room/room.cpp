@@ -925,10 +925,12 @@ void Room::startGame(ServerPlayer &player, const Packet &) {
 }
 
 void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
+  spdlog::info("[Invite-C++] requestInvitePlayerList {} connId={}", sender.getId(), sender.getConnId());
   pushRequest(fmt::format("{},{},{}", sender.getId(), "RequestInvitePlayerList", sender.getConnId()));
 }
 
 void Room::invitePlayer(ServerPlayer &sender, const Packet &packet) {
+  spdlog::info("[Invite-C++] invitePlayer sender={}", sender.getId());
   std::string_view sv;
   auto ret = cbor_stream_decode(
     (cbor_data)packet.cborData.data(), packet.cborData.size(),
@@ -985,6 +987,8 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
   if (iter != room_actions.end()) {
     auto func = iter->second;
     (this->*func)(sender, packet);
+  } else {
+    spdlog::debug("[Invite-C++] handlePacket unknown command: {}", packet.command);
   }
 }
 
