@@ -925,34 +925,143 @@ void Room::startGame(ServerPlayer &player, const Packet &) {
 }
 
 void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
-  spdlog::info("[Invite-C++] requestInvitePlayerList {} connId={}", sender.getId(), sender.getConnId());
-  pushRequest(fmt::format("{},{},{}", sender.getId(), "RequestInvitePlayerList", sender.getConnId()));
+  json arr = json::array();
+  auto &um = Server::instance().user_manager();
+  int selfConnId = sender.getConnId();
+  for (const auto &[connId, p] : um.getPlayers()) {
+    if (!p->isOnline() || connId == selfConnId) continue;
+    auto room = p->getRoom().lock();
+    int rid = room ? room->getId() : 0;
+    if (rid == id) continue; // exclude players already in this room
+    arr.push_back({
+      {"id", p->getId()},
+      {"connId", connId},
+      {"name", p->getScreenName()},
+      {"avatar", p->getAvatar()},
+      {"roomId", rid},
+    });
+  }
+  sender.doNotify("InvitePlayerList", arr.dump());
 }
 
 void Room::invitePlayer(ServerPlayer &sender, const Packet &packet) {
-  spdlog::info("[Invite-C++] invitePlayer sender={}", sender.getId());
+  cbor_data cbuf = (cbor_data)packet.cborData.data();
+  size_t len = packet.cborData.size();
   std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
+  auto dres = cbor_stream_decode(cbuf, len, &Cbor::stringCallbacks, &sv);
+  if (dres.read == 0) return;
   auto j = json::parse(sv);
   int targetId = j.value("targetId", 0);
   if (!targetId) return;
-  pushRequest(fmt::format("{},{},{}", sender.getId(), "InvitePlayer", targetId));
+
+  auto now = std::chrono::duration_cast<std::chrono::seconds>(
+    std::chrono::system_clock::now().time_since_epoch()).count();
+  std::string cooldownKey = std::to_string(sender.getId()) + "_" + std::to_string(targetId);
+  auto it = invite_cooldown.find(cooldownKey);
+  if (it != invite_cooldown.end() && now - it->second < 5) {
+    json result = { {"inviteId", 0}, {"result", "cooldown"} };
+    sender.doNotify("InviteResult", result.dump());
+    return;
+  }
+
+  auto &um = Server::instance().user_manager();
+  auto target = um.findPlayer(targetId).lock();
+  if (!target) {
+    json result = { {"inviteId", 0}, {"result", "offline"} };
+    sender.doNotify("InviteResult", result.dump());
+    return;
+  }
+
+  auto targetRoom = target->getRoom().lock();
+  if (targetRoom && targetRoom->getId() == id) {
+    json result = { {"inviteId", 0}, {"result", "already_in_room"} };
+    sender.doNotify("InviteResult", result.dump());
+    return;
+  }
+
+  if (isStarted() || (int)players.size() >= (int)capacity) {
+    json result = { {"inviteId", 0}, {"result", "full_or_started"} };
+    sender.doNotify("InviteResult", result.dump());
+    return;
+  }
+
+  int inviteId = id * 1000000 + sender.getId() * 1000 + targetId + (int)now;
+  PendingInvite invite;
+  invite.inviterId = sender.getId();
+  invite.targetConnId = target->getConnId();
+  invite.expireAt = now + 10;
+  pending_invites[inviteId] = invite;
+  invite_cooldown[cooldownKey] = now;
+
+  json notif = {
+    {"inviteId", inviteId},
+    {"inviterId", sender.getId()},
+    {"inviterName", sender.getScreenName()},
+    {"roomId", id},
+    {"gameMode", gameMode},
+  };
+  target->doNotify("ReceiveInvite", notif.dump());
 }
 
 void Room::respondInvite(ServerPlayer &sender, const Packet &packet) {
+  cbor_data cbuf = (cbor_data)packet.cborData.data();
+  size_t len = packet.cborData.size();
   std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
+  auto dres = cbor_stream_decode(cbuf, len, &Cbor::stringCallbacks, &sv);
+  if (dres.read == 0) return;
   auto j = json::parse(sv);
   int inviteId = j.value("inviteId", 0);
   bool accept = j.value("accept", false);
   if (!inviteId) return;
-  pushRequest(fmt::format("{},{},{},{}", sender.getId(), "RespondInvite", inviteId, (accept ? 1 : 0)));
+
+  auto now = std::chrono::duration_cast<std::chrono::seconds>(
+    std::chrono::system_clock::now().time_since_epoch()).count();
+  auto invite_it = pending_invites.find(inviteId);
+  if (invite_it == pending_invites.end()) return;
+  if (invite_it->second.expireAt < now) {
+    pending_invites.erase(invite_it);
+    return;
+  }
+
+  auto invite = invite_it->second;
+  pending_invites.erase(invite_it);
+
+  auto &um = Server::instance().user_manager();
+  auto inviter = um.findPlayer(invite.inviterId).lock();
+
+  if (!accept) {
+    if (inviter) {
+      json result = { {"inviteId", inviteId}, {"result", "rejected"} };
+      inviter->doNotify("InviteResult", result.dump());
+    }
+    return;
+  }
+
+  if (isStarted() || isFull()) {
+    if (inviter) {
+      json result = { {"inviteId", inviteId}, {"result", "full_or_started"} };
+      inviter->doNotify("InviteResult", result.dump());
+    }
+    return;
+  }
+
+  auto target = um.findPlayerByConnId(invite.targetConnId).lock();
+  if (!target) {
+    if (inviter) {
+      json result = { {"inviteId", inviteId}, {"result", "offline"} };
+      inviter->doNotify("InviteResult", result.dump());
+    }
+    return;
+  }
+
+  auto oldRoom = target->getRoom().lock();
+  if (oldRoom) oldRoom->removePlayer(*target);
+  addPlayer(*target);
+
+  if (inviter) {
+    json result = { {"inviteId", inviteId}, {"result", "accepted"} };
+    inviter->doNotify("InviteResult", result.dump());
+  }
 }
 
 typedef void (Room::*room_cb)(ServerPlayer &, const Packet &);
@@ -987,8 +1096,6 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
   if (iter != room_actions.end()) {
     auto func = iter->second;
     (this->*func)(sender, packet);
-  } else {
-    spdlog::debug("[Invite-C++] handlePacket unknown command: {}", packet.command);
   }
 }
 

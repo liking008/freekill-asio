@@ -4,6 +4,15 @@
 
 #include "server/room/roombase.h"
 
+#include <unordered_map>
+#include <chrono>
+
+struct PendingInvite {
+  int inviterId;
+  int targetConnId;
+  int64_t expireAt;
+};
+
 class Server;
 class ServerPlayer;
 class RoomThread;
@@ -100,6 +109,10 @@ public:
   // 需要返回添加的那个人机
   ServerPlayer &addNpc();
   void removeNpc(ServerPlayer &);
+
+  // Invite
+  std::unordered_map<int, PendingInvite> pending_invites;
+  std::unordered_map<std::string, int64_t> invite_cooldown;
 
 private:
   int m_thread_id = 0;
