@@ -348,18 +348,14 @@ int Server::isMuted(int playerId) const {
   return 1; // 1为完全禁言
 }
 
-nlohmann::json Server::getOnlinePlayersJson(int excludeConnId) const {
+nlohmann::json Server::getOnlinePlayersJson(int excludeConnId, int excludeRoomId) const {
   nlohmann::json arr = nlohmann::json::array();
   for (const auto &[connId, p] : m_user_manager->getPlayers()) {
     if (!p->isOnline() || connId == excludeConnId) continue;
-    nlohmann::json obj;
-    obj["id"] = p->getId();
-    obj["connId"] = connId;
-    obj["name"] = p->getScreenName();
-    obj["avatar"] = p->getAvatar();
     auto room = p->getRoom().lock();
-    obj["roomId"] = room ? room->getId() : 0;
-    arr.push_back(obj);
+    int rid = room ? room->getId() : 0;
+    if (excludeRoomId > 0 && rid == excludeRoomId) continue;
+    arr.push_back({ p->getId(), connId, p->getScreenName(), p->getAvatar(), rid });
   }
   return arr;
 }

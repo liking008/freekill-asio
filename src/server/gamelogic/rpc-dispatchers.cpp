@@ -294,11 +294,15 @@ static _rpcRet _rpc_Server_getTask(const JsonRpcPacket &packet) {
 
 static _rpcRet _rpc_Server_getOnlinePlayers(const JsonRpcPacket &packet) {
   int excludeConnId = -1;
-  if (packet.param_count == 1 && std::holds_alternative<int>(packet.param1)) {
+  int excludeRoomId = 0;
+  if (packet.param_count >= 1 && std::holds_alternative<int>(packet.param1)) {
     excludeConnId = std::get<int>(packet.param1);
   }
+  if (packet.param_count >= 2 && std::holds_alternative<int>(packet.param2)) {
+    excludeRoomId = std::get<int>(packet.param2);
+  }
 
-  auto j = Server::instance().getOnlinePlayersJson(excludeConnId);
+  auto j = Server::instance().getOnlinePlayersJson(excludeConnId, excludeRoomId);
   auto bin = json::to_cbor(j);
   return { true, std::string(bin.begin(), bin.end()) };
 }
