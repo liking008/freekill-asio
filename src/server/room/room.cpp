@@ -1014,6 +1014,13 @@ void Room::respondInvite(ServerPlayer &sender, const Packet &packet) {
   bool accept = j.value("accept", false);
   if (!inviteId) return;
 
+  int srcRoomId = inviteId / 1000000;
+  if (srcRoomId != id) {
+    auto lobby = Server::instance().room_manager().lobby().lock();
+    if (lobby) lobby->respondInvite(sender, packet);
+    return;
+  }
+
   auto now = std::chrono::duration_cast<std::chrono::seconds>(
     std::chrono::system_clock::now().time_since_epoch()).count();
   auto invite_it = pending_invites.find(inviteId);
