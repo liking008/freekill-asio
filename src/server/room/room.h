@@ -114,6 +114,10 @@ public:
   std::unordered_map<int, PendingInvite> pending_invites;
   std::unordered_map<std::string, int64_t> invite_cooldown;
 
+  void requestInvitePlayerList(ServerPlayer &, const Packet &);
+  void invitePlayer(ServerPlayer &, const Packet &);
+  void respondInvite(ServerPlayer &, const Packet &);
+
 private:
   int m_thread_id = 0;
 
@@ -167,8 +171,5 @@ private:
   void startGame(ServerPlayer &, const Packet &);
   void trust(ServerPlayer &, const Packet &);
   void changeRoom(ServerPlayer &, const Packet &);
-  void requestInvitePlayerList(ServerPlayer &, const Packet &);
-  void invitePlayer(ServerPlayer &, const Packet &);
-  void respondInvite(ServerPlayer &, const Packet &);
 
 };
