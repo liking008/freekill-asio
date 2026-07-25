@@ -77,6 +77,8 @@ public:
   bool isTempBanned(const std::string_view &addr) const;
   int isMuted(int playerId) const;
 
+  nlohmann::json getOnlinePlayersJson(int excludeConnId = -1) const;
+
   void beginTransaction();
   void endTransaction();
 

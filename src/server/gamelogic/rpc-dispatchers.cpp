@@ -292,6 +292,17 @@ static _rpcRet _rpc_Server_getTask(const JsonRpcPacket &packet) {
   return { true, std::string(bin.begin(), bin.end()) };
 }
 
+static _rpcRet _rpc_Server_getOnlinePlayers(const JsonRpcPacket &packet) {
+  int excludeConnId = -1;
+  if (packet.param_count == 1 && std::holds_alternative<int>(packet.param1)) {
+    excludeConnId = std::get<int>(packet.param1);
+  }
+
+  auto j = Server::instance().getOnlinePlayersJson(excludeConnId);
+  auto bin = json::to_cbor(j);
+  return { true, std::string(bin.begin(), bin.end()) };
+}
+
 
 // part2: Player相关
 
@@ -852,6 +863,45 @@ static _rpcRet _rpc_Room_getGlobalSaveState(const JsonRpcPacket &packet) {
   return { true, true };
 }
 
+static _rpcRet _rpc_Room_invitePlayer(const JsonRpcPacket &packet) {
+  if (!(packet.param_count == 2 &&
+    std::holds_alternative<int>(packet.param1) &&
+    std::holds_alternative<int>(packet.param2)
+  )) {
+    return { false, nullVal };
+  }
+
+  auto roomId = std::get<int>(packet.param1);
+  auto targetConnId = std::get<int>(packet.param2);
+
+  auto &um = Server::instance().user_manager();
+  auto target = um.findPlayerByConnId(targetConnId).lock();
+  if (!target) {
+    return { true, "offline"sv };
+  }
+
+  auto room = Server::instance().room_manager().findRoom(roomId).lock();
+  if (!room) {
+    return { true, "room_not_found"sv };
+  }
+
+  if (room->isFull() || room->isStarted()) {
+    return { true, "full_or_started"sv };
+  }
+
+  auto oldRoom = target->getRoom().lock();
+  if (oldRoom && oldRoom->getId() == roomId) {
+    return { true, "already_in_room"sv };
+  }
+
+  if (oldRoom) {
+    oldRoom->removePlayer(*target);
+  }
+  room->addPlayer(*target);
+
+  return { true, "ok"sv };
+}
+
 
 // 收官：getRoom
 
@@ -921,6 +971,7 @@ const JsonRpc::RpcMethodMap RpcDispatchers::ServerRpcMethods {
   { "Task_getPlayer", _rpc_Task_getPlayer },
 
   { "Server_getTask", _rpc_Server_getTask },
+  { "Server_getOnlinePlayers", _rpc_Server_getOnlinePlayers },
 
   { "ServerPlayer_doRequest", _rpc_Player_doRequest },
   { "ServerPlayer_waitForReply", _rpc_Player_waitForReply },
@@ -948,6 +999,7 @@ const JsonRpc::RpcMethodMap RpcDispatchers::ServerRpcMethods {
   { "Room_removeNpc", _rpc_Room_removeNpc },
   { "Room_saveGlobalState", _rpc_Room_saveGlobalState },
   { "Room_getGlobalSaveState", _rpc_Room_getGlobalSaveState },
+  { "Room_invitePlayer", _rpc_Room_invitePlayer },
 
   { "RoomThread_getRoom", _rpc_RoomThread_getRoom },
 };
