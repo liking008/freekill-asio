@@ -154,5 +154,8 @@ private:
   void startGame(ServerPlayer &, const Packet &);
   void trust(ServerPlayer &, const Packet &);
   void changeRoom(ServerPlayer &, const Packet &);
+  void requestInvitePlayerList(ServerPlayer &, const Packet &);
+  void invitePlayer(ServerPlayer &, const Packet &);
+  void respondInvite(ServerPlayer &, const Packet &);
 
 };

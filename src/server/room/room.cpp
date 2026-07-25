@@ -921,6 +921,35 @@ void Room::startGame(ServerPlayer &player, const Packet &) {
   }
 }
 
+void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
+  pushRequest(fmt::format("{},{},{}", sender.getId(), "RequestInvitePlayerList", sender.getConnId()));
+}
+
+void Room::invitePlayer(ServerPlayer &sender, const Packet &packet) {
+  std::string_view sv;
+  auto ret = cbor_stream_decode(
+    (cbor_data)packet.cborData.data(), packet.cborData.size(),
+    &Cbor::stringCallbacks, &sv);
+  if (ret.read == 0) return;
+  auto j = json::parse(sv);
+  int targetId = j.value("targetId", 0);
+  if (!targetId) return;
+  pushRequest(fmt::format("{},{},{}", sender.getId(), "InvitePlayer", targetId));
+}
+
+void Room::respondInvite(ServerPlayer &sender, const Packet &packet) {
+  std::string_view sv;
+  auto ret = cbor_stream_decode(
+    (cbor_data)packet.cborData.data(), packet.cborData.size(),
+    &Cbor::stringCallbacks, &sv);
+  if (ret.read == 0) return;
+  auto j = json::parse(sv);
+  int inviteId = j.value("inviteId", 0);
+  bool accept = j.value("accept", false);
+  if (!inviteId) return;
+  pushRequest(fmt::format("{},{},{},{}", sender.getId(), "RespondInvite", inviteId, (accept ? 1 : 0)));
+}
+
 typedef void (Room::*room_cb)(ServerPlayer &, const Packet &);
 
 void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
@@ -934,6 +963,9 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
     {"ChangeRoom", &Room::changeRoom},
     {"Chat", &Room::chat},
     {"ReadGlobalSaveState", &Room::readGlobalSaveState},
+    {"RequestInvitePlayerList", &Room::requestInvitePlayerList},
+    {"InvitePlayer", &Room::invitePlayer},
+    {"RespondInvite", &Room::respondInvite},
   };
   if (packet.command == "PushRequest") {
     std::string_view sv;
