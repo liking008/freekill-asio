@@ -985,7 +985,7 @@ void Room::invitePlayer(ServerPlayer &sender, const Packet &packet) {
     return;
   }
 
-  int inviteId = id * 1000000 + sender.getId() * 1000 + targetId + (int)now;
+  int inviteId = id * 1000000 + (next_invite_seq++ % 999999);
   PendingInvite invite;
   invite.inviterId = sender.getId();
   invite.targetConnId = target->getConnId();

@@ -113,6 +113,7 @@ public:
   // Invite
   std::unordered_map<int, PendingInvite> pending_invites;
   std::unordered_map<std::string, int64_t> invite_cooldown;
+  int next_invite_seq = 0;
 
   void requestInvitePlayerList(ServerPlayer &, const Packet &);
   void invitePlayer(ServerPlayer &, const Packet &);
