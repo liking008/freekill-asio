@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <nlohmann/json.hpp>
+
 class ServerSocket;
 class ClientSocket;
 
