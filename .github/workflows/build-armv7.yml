@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Git Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
@@ -61,7 +61,7 @@ jobs:
         mv zip/freekill-asio-static.tar.gz zip/freekill-asio-static-${{ steps.previoustag.outputs.tag }}-armv7.tar.gz
 
     - name: Upload Release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         token: ${{ secrets.MY_TOKEN }}
         tag_name: ${{ steps.previoustag.outputs.tag }}
