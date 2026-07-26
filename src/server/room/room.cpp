@@ -1063,6 +1063,8 @@ void Room::respondInvite(ServerPlayer &sender, const Packet &packet) {
 
   auto oldRoom = target->getRoom().lock();
   if (oldRoom) oldRoom->removePlayer(*target);
+  auto lobby = Server::instance().room_manager().lobby().lock();
+  if (lobby) lobby->addPlayer(*target);
   addPlayer(*target);
 
   if (inviter) {

@@ -901,6 +901,8 @@ static _rpcRet _rpc_Room_invitePlayer(const JsonRpcPacket &packet) {
   if (oldRoom) {
     oldRoom->removePlayer(*target);
   }
+  auto lobby = Server::instance().room_manager().lobby().lock();
+  if (lobby) lobby->addPlayer(*target);
   room->addPlayer(*target);
 
   return { true, "ok"sv };
