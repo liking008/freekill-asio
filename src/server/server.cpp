@@ -350,13 +350,18 @@ int Server::isMuted(int playerId) const {
 
 nlohmann::json Server::getOnlinePlayersJson(int excludeConnId, int excludeRoomId) const {
   nlohmann::json arr = nlohmann::json::array();
+  int totalOnline = 0;
   for (const auto &[connId, p] : m_user_manager->getPlayers()) {
-    if (!p->isOnline() || connId == excludeConnId) continue;
+    if (!p->isOnline()) continue;
+    totalOnline++;
+    if (connId == excludeConnId) continue;
     auto room = p->getRoom().lock();
     int rid = room ? room->getId() : 0;
     if (excludeRoomId > 0 && rid == excludeRoomId) continue;
     arr.push_back({ p->getId(), connId, p->getScreenName(), p->getAvatar(), rid });
   }
+  spdlog::info("[INVITE-DBG] getOnlinePlayersJson excludeConnId={} excludeRoomId={} totalOnline={} resultCount={}",
+    excludeConnId, excludeRoomId, totalOnline, arr.size());
   return arr;
 }
 

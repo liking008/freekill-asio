@@ -350,6 +350,11 @@ void Lobby::handlePacket(ServerPlayer &sender, const Packet &packet) {
   if (iter != lobby_actions.end()) {
     auto func = iter->second;
     (this->*func)(sender, packet);
+  } else {
+    if (packet.command == "RequestInvitePlayerList" || packet.command == "InvitePlayer") {
+      spdlog::info("[INVITE-DBG-Lobby] handlePacket received command='{}' but lobby has no handler for it, dropped",
+        packet.command);
+    }
   }
 }
 
