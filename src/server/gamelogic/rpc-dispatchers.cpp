@@ -302,10 +302,7 @@ static _rpcRet _rpc_Server_getOnlinePlayers(const JsonRpcPacket &packet) {
     excludeRoomId = std::get<int>(packet.param2);
   }
 
-  spdlog::info("[INVITE-DBG-RPC] _rpc_Server_getOnlinePlayers excludeConnId={} excludeRoomId={}",
-    excludeConnId, excludeRoomId);
   auto j = Server::instance().getOnlinePlayersJson(excludeConnId, excludeRoomId);
-  spdlog::info("[INVITE-DBG-RPC] _rpc_Server_getOnlinePlayers resultCount={}", j.size());
   auto bin = json::to_cbor(j);
   return { true, std::string(bin.begin(), bin.end()) };
 }

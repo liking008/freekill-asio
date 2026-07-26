@@ -925,16 +925,11 @@ void Room::startGame(ServerPlayer &player, const Packet &) {
 }
 
 void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
-  spdlog::info("[INVITE-DBG] requestInvitePlayerList called, roomId={} senderId={} senderConnId={}",
-    id, sender.getId(), sender.getConnId());
   json arr = json::array();
   auto &um = Server::instance().user_manager();
   int selfConnId = sender.getConnId();
-  int totalOnline = 0;
   for (const auto &[connId, p] : um.getPlayers()) {
-    if (!p->isOnline()) continue;
-    totalOnline++;
-    if (connId == selfConnId) continue;
+    if (!p->isOnline() || connId == selfConnId) continue;
     auto room = p->getRoom().lock();
     int rid = room ? room->getId() : 0;
     if (rid == id) continue; // exclude players already in this room
@@ -946,8 +941,6 @@ void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
       {"roomId", rid},
     });
   }
-  spdlog::info("[INVITE-DBG] requestInvitePlayerList done, totalOnline={} resultCount={} sending to connId={}",
-    totalOnline, arr.size(), selfConnId);
   sender.doNotify("InvitePlayerList", arr.dump());
 }
 
@@ -1108,13 +1101,8 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
 
   auto iter = room_actions.find(packet.command);
   if (iter != room_actions.end()) {
-    spdlog::info("[INVITE-DBG] Room::handlePacket roomId={} command='{}' found in room_actions, dispatching",
-      id, packet.command);
     auto func = iter->second;
     (this->*func)(sender, packet);
-  } else {
-    spdlog::info("[INVITE-DBG] Room::handlePacket roomId={} command='{}' NOT found in room_actions, dropped silently",
-      id, packet.command);
   }
 }
 

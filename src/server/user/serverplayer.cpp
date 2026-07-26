@@ -172,19 +172,9 @@ void ServerPlayer::onNotificationGot(const Packet &packet) {
     return;
   }
 
-  if (packet.command == "RequestInvitePlayerList" || packet.command == "InvitePlayer"
-    || packet.command == "RespondInvite" || packet.command == "InvitePlayerList") {
-    spdlog::info("[INVITE-DBG-Player] onNotificationGot id={} connId={} roomId={} command='{}'",
-      id, connId, roomId, packet.command);
-  }
-
+  // spdlog::debug("[RX](id={} connId={} state={} Room={}): {} {}", id, connId, getStateString(), roomId, packet.command, toHex(packet.cborData));
   auto room = getRoom().lock();
-  if (!room) {
-    spdlog::info("[INVITE-DBG-Player] onNotificationGot id={} connId={} room is NULL, dropping command='{}'",
-      id, connId, packet.command);
-    return;
-  }
-  room->handlePacket(*this, packet);
+  if (room) room->handlePacket(*this, packet);
 }
 
 void ServerPlayer::onDisconnected() {
