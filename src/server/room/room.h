@@ -119,6 +119,15 @@ public:
   void invitePlayer(ServerPlayer &, const Packet &);
   void respondInvite(ServerPlayer &, const Packet &);
 
+  void switchPlayerWithObserver(int playerConnId, int observerConnId);
+  int addObserverAsPlayerAt(ServerPlayer &observer, int insertAfterConnId);
+
+  void requestObserverList(ServerPlayer &, const Packet &);
+  void inviteObserver(ServerPlayer &, const Packet &);
+  void respondObserverInvite(ServerPlayer &, const Packet &);
+  void takeOverRunned(ServerPlayer &, const Packet &);
+  void inviteObserverAddSeat(ServerPlayer &, const Packet &);
+
 private:
   int m_thread_id = 0;
 
