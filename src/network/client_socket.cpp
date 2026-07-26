@@ -43,8 +43,8 @@ awaitable<void> ClientSocket::reader() {
       }
 
       auto self = weak.lock();
-      if (!self && !reason.empty()) {
-        spdlog::info("client {} lost connection: {}", addr, reason);
+      if (!self) {
+        spdlog::info("client {} lost connection: {}", addr, reason.empty() ? "empty reason" : reason);
       } else {
         disconnect_reason = reason;
       }
