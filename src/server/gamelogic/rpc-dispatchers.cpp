@@ -437,26 +437,6 @@ static _rpcRet _rpc_Player_setDied(const JsonRpcPacket &packet) {
   return { true, nullVal };
 }
 
-static _rpcRet _rpc_Player_setState(const JsonRpcPacket &packet) {
-  if (!(packet.param_count == 2 &&
-    std::holds_alternative<int>(packet.param1) &&
-    std::holds_alternative<int>(packet.param2)
-  )) {
-    return { false, nullVal };
-  }
-
-  auto connId = std::get<int>(packet.param1);
-  int state = std::get<int>(packet.param2);
-
-  auto player = Server::instance().user_manager().findPlayerByConnId(connId).lock();
-  if (!player) {
-    return { false, "Player not found"sv };
-  }
-
-  player->setState(static_cast<Player::State>(state));
-  return { true, nullVal };
-}
-
 static _rpcRet _rpc_Player_emitKick(const JsonRpcPacket &packet) {
   if (!( packet.param_count == 1 &&
     std::holds_alternative<int>(packet.param1)
@@ -926,56 +906,6 @@ static _rpcRet _rpc_Room_invitePlayer(const JsonRpcPacket &packet) {
   return { true, "ok"sv };
 }
 
-static _rpcRet _rpc_Room_switchPlayerWithObserver(const JsonRpcPacket &packet) {
-  if (!(packet.param_count == 3 &&
-    std::holds_alternative<int>(packet.param1) &&
-    std::holds_alternative<int>(packet.param2) &&
-    std::holds_alternative<int>(packet.param3)
-  )) {
-    return { false, nullVal };
-  }
-
-  int roomId = std::get<int>(packet.param1);
-  int playerConnId = std::get<int>(packet.param2);
-  int observerConnId = std::get<int>(packet.param3);
-
-  auto room = Server::instance().room_manager().findRoom(roomId).lock();
-  if (!room) {
-    return { false, "Room not found"sv };
-  }
-
-  room->switchPlayerWithObserver(playerConnId, observerConnId);
-  return { true, "ok"sv };
-}
-
-static _rpcRet _rpc_Room_addObserverAsPlayerAt(const JsonRpcPacket &packet) {
-  if (!(packet.param_count == 3 &&
-    std::holds_alternative<int>(packet.param1) &&
-    std::holds_alternative<int>(packet.param2) &&
-    std::holds_alternative<int>(packet.param3)
-  )) {
-    return { false, nullVal };
-  }
-
-  int roomId = std::get<int>(packet.param1);
-  int observerConnId = std::get<int>(packet.param2);
-  int insertAfterConnId = std::get<int>(packet.param3);
-
-  auto room = Server::instance().room_manager().findRoom(roomId).lock();
-  if (!room) {
-    return { false, "Room not found"sv };
-  }
-
-  auto &um = Server::instance().user_manager();
-  auto observer = um.findPlayerByConnId(observerConnId).lock();
-  if (!observer) {
-    return { false, "observer not found"sv };
-  }
-
-  int ret = room->addObserverAsPlayerAt(*observer, insertAfterConnId);
-  return { true, ret };
-}
-
 
 // 收官：getRoom
 
@@ -1053,7 +983,6 @@ const JsonRpc::RpcMethodMap RpcDispatchers::ServerRpcMethods {
   { "ServerPlayer_thinking", _rpc_Player_thinking },
   { "ServerPlayer_setThinking", _rpc_Player_setThinking },
   { "ServerPlayer_setDied", _rpc_Player_setDied },
-  { "ServerPlayer_setState", _rpc_Player_setState },
   { "ServerPlayer_emitKick", _rpc_Player_emitKick },
   { "ServerPlayer_saveState", _rpc_Player_saveState },
   { "ServerPlayer_getSaveState", _rpc_Player_getSaveState },
@@ -1075,8 +1004,6 @@ const JsonRpc::RpcMethodMap RpcDispatchers::ServerRpcMethods {
   { "Room_saveGlobalState", _rpc_Room_saveGlobalState },
   { "Room_getGlobalSaveState", _rpc_Room_getGlobalSaveState },
   { "Room_invitePlayer", _rpc_Room_invitePlayer },
-  { "Room_switchPlayerWithObserver", _rpc_Room_switchPlayerWithObserver },
-  { "Room_addObserverAsPlayerAt", _rpc_Room_addObserverAsPlayerAt },
 
   { "RoomThread_getRoom", _rpc_RoomThread_getRoom },
 };

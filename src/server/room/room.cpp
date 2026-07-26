@@ -1071,40 +1071,6 @@ void Room::respondInvite(ServerPlayer &sender, const Packet &packet) {
   }
 }
 
-void Room::switchPlayerWithObserver(int playerConnId, int observerConnId) {
-  auto it = std::ranges::find(players, playerConnId);
-  if (it != players.end()) {
-    *it = observerConnId;
-  }
-
-  auto obIt = std::ranges::find(observers, observerConnId);
-  if (obIt != observers.end()) {
-    observers.erase(obIt);
-  }
-
-  if (std::ranges::find(players, playerConnId) == players.end()) {
-    observers.push_back(playerConnId);
-  }
-}
-
-int Room::addObserverAsPlayerAt(ServerPlayer &observer, int insertAfterConnId) {
-  auto obIt = std::ranges::find(observers, observer.getConnId());
-  if (obIt != observers.end()) {
-    observers.erase(obIt);
-  }
-
-  auto it = std::ranges::find(players, insertAfterConnId);
-  if (it != players.end()) {
-    players.insert(it + 1, observer.getConnId());
-  } else {
-    players.push_back(observer.getConnId());
-  }
-
-  observer.setRoom(*this);
-  observer.setState(Player::Online);
-  return observer.getConnId();
-}
-
 typedef void (Room::*room_cb)(ServerPlayer &, const Packet &);
 
 void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
@@ -1121,11 +1087,6 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
     {"RequestInvitePlayerList", &Room::requestInvitePlayerList},
     {"InvitePlayer", &Room::invitePlayer},
     {"RespondInvite", &Room::respondInvite},
-    {"RequestObserverList", &Room::requestObserverList},
-    {"InviteObserver", &Room::inviteObserver},
-    {"RespondObserverInvite", &Room::respondObserverInvite},
-    {"TakeOverRunned", &Room::takeOverRunned},
-    {"InviteObserverAddSeat", &Room::inviteObserverAddSeat},
   };
   if (packet.command == "PushRequest") {
     std::string_view sv;
@@ -1143,46 +1104,6 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
     auto func = iter->second;
     (this->*func)(sender, packet);
   }
-}
-
-void Room::requestObserverList(ServerPlayer &sender, const Packet &) {
-  pushRequest(fmt::format("{},requestObserverList", sender.getId()));
-}
-
-void Room::inviteObserver(ServerPlayer &sender, const Packet &packet) {
-  std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
-  pushRequest(fmt::format("{},inviteObserver,{}", sender.getId(), sv));
-}
-
-void Room::respondObserverInvite(ServerPlayer &sender, const Packet &packet) {
-  std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
-  pushRequest(fmt::format("{},respondObserverInvite,{}", sender.getId(), sv));
-}
-
-void Room::takeOverRunned(ServerPlayer &sender, const Packet &packet) {
-  std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
-  pushRequest(fmt::format("{},takeOverRunned,{},{}", sender.getId(), sender.getConnId(), sv));
-}
-
-void Room::inviteObserverAddSeat(ServerPlayer &sender, const Packet &packet) {
-  std::string_view sv;
-  auto ret = cbor_stream_decode(
-    (cbor_data)packet.cborData.data(), packet.cborData.size(),
-    &Cbor::stringCallbacks, &sv);
-  if (ret.read == 0) return;
-  pushRequest(fmt::format("{},inviteObserverAddSeat,{}", sender.getId(), sv));
 }
 
 // Lua用：request之前设置计时器防止等到死。
