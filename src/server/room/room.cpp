@@ -932,7 +932,8 @@ void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
     if (!p->isOnline() || connId == selfConnId) continue;
     auto room = p->getRoom().lock();
     int rid = room ? room->getId() : 0;
-    if (rid == id) continue; // exclude players already in this room
+    if (rid == id) continue; 
+    if (room && room->isStarted()) continue; 
     arr.push_back({
       {"id", p->getId()},
       {"connId", connId},
