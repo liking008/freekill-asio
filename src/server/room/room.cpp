@@ -933,7 +933,8 @@ void Room::requestInvitePlayerList(ServerPlayer &sender, const Packet &) {
     auto room = p->getRoom().lock();
     int rid = room ? room->getId() : 0;
     if (rid == id) continue; 
-    if (room && room->isStarted()) continue; 
+    auto targetRoom = std::dynamic_pointer_cast<Room>(room);
+    if (targetRoom && targetRoom->isStarted()) continue; 
     arr.push_back({
       {"id", p->getId()},
       {"connId", connId},
