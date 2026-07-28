@@ -20,7 +20,7 @@ jobs:
         packages: curl
 
     - name: Run build script
-      run: curl -fsSL https://raw.githubusercontent.com/Qsgs-Fans/freekill-asio/refs/heads/master/distro/static-build/alpine-build.sh | sh
+      run: curl -fsSL https://raw.githubusercontent.com/liking008/freekill-asio/refs/heads/master/distro/static-build/alpine-build.sh | sh
       shell: alpine.sh --root {0}
 
     - name: Copy release zip
@@ -67,4 +67,3 @@ jobs:
       with:
         tag_name: ${{ steps.previoustag.outputs.tag }}
         files: zip/freekill-asio-static-${{ steps.previoustag.outputs.tag }}-aarch64.tar.gz
-
