@@ -83,6 +83,21 @@ bool Room::isFull() const { return players.size() >= capacity; }
 const std::vector<int> &Room::getPlayers() const { return players; }
 const std::vector<int> &Room::getObservers() const { return observers; }
 
+void Room::broadcast(const std::string_view &command, const std::string_view &data) {
+  doBroadcastNotify(players, command, data);
+  doBroadcastNotify(observers, command, data);
+}
+
+std::weak_ptr<ServerPlayer> Room::findObserver(int playerId) const {
+  auto &um = Server::instance().user_manager();
+  for (auto connId : observers) {
+    auto p = um.findPlayerByConnId(connId).lock();
+    if (p && p->getId() == playerId)
+      return p;
+  }
+  return {};
+}
+
 const std::string_view Room::getSettings() const { return settings; }
 const std::string_view Room::getGameMode() const { return gameMode; }
 const std::string_view Room::getPassword() const { return password; }
@@ -152,7 +167,7 @@ void Room::setOwner(ServerPlayer &owner) {
   // BOT不能当房主！
   if (owner.getId() < 0) return;
   m_owner_conn_id = owner.getConnId();
-  doBroadcastNotify(players, "RoomOwner", Cbor::encodeArray( { owner.getId() } ));
+  broadcast("RoomOwner", Cbor::encodeArray( { owner.getId() } ));
 }
 
 void Room::addPlayer(ServerPlayer &player) {
@@ -171,7 +186,7 @@ void Room::addPlayer(ServerPlayer &player) {
   auto mode = gameMode;
 
   // 告诉房里所有玩家有新人进来了
-  doBroadcastNotify(players, "AddPlayer", Cbor::encodeArray({
+  broadcast("AddPlayer", Cbor::encodeArray({
     pid,
     player.getScreenName().data(),
     player.getAvatar().data(),
@@ -214,6 +229,18 @@ void Room::addPlayer(ServerPlayer &player) {
     }));
   }
 
+  for (auto connId : observers) {
+    auto p = um.findPlayerByConnId(connId).lock();
+    if (!p) continue; // FIXME: 应当是出大问题了
+    player.doNotify("AddObserver", Cbor::encodeArray({
+      p->getId(),
+      p->getScreenName(),
+      p->getAvatar(),
+      false,
+      p->getTotalGameTime(),
+    }));
+  }
+
   if (m_owner_conn_id == 0) {
     setOwner(player);
   }
@@ -225,7 +252,7 @@ void Room::addPlayer(ServerPlayer &player) {
     player.setLastGameMode(std::string(mode));
     updatePlayerGameData(pid, mode);
   } else {
-    doBroadcastNotify(players, "UpdateGameData", Cbor::encodeArray({
+    broadcast("UpdateGameData", Cbor::encodeArray({
       pid,
       // TODO 把傻逼gameData数组拿下
       player.getGameData()[0],
@@ -293,7 +320,7 @@ void Room::removePlayer(ServerPlayer &player) {
 
     // spdlog::debug("[ROOM_REMOVEPLAYER] ServerPlayer {} (connId={}, state={}) removed from room {}", player.getId(), player.getConnId(), player.getStateString(), id);
 
-    doBroadcastNotify(players, "RemovePlayer", Cbor::encodeArray({ player.getId() }));
+    broadcast("RemovePlayer", Cbor::encodeArray({ player.getId() }));
   } else {
     // 首先拿到跑路玩家的socket，然后把玩家的状态设为逃跑，这样自动被机器人接管
     auto socket = player.getRouter().getSocket();
@@ -328,25 +355,118 @@ void Room::removePlayer(ServerPlayer &player) {
   }
 }
 
-void Room::addObserver(ServerPlayer &player) {
-  // 首先只能旁观在运行的房间，因为旁观是由Lua处理的
-  if (!isStarted()) {
-    player.doNotify("ErrorMsg", "Can only observe running room.");
-    return;
+static cbor_item_t* make_cbor_int(int val) {
+  if (val >= 0) {
+    if (val <= 0xFF) return cbor_build_uint8(val);
+    if (val <= 0xFFFF) return cbor_build_uint16(val);
+    return cbor_build_uint32(val);
+  } else {
+    if (val >= -128) return cbor_build_negint8(-(val + 1));
+    if (val >= -32768) return cbor_build_negint16(-(val + 1));
+    return cbor_build_negint32(-(val + 1));
   }
+}
 
+void Room::addObserver(ServerPlayer &player) {
   if (isRejected(player)) {
     player.doNotify("ErrorMsg", "rejected your demand of joining room");
     return;
   }
 
-  // 向observers中追加player，并从大厅移除player，然后将player的room设为this
+  auto &um = Server::instance().user_manager();
+
+  if (!isStarted()) {
+    const auto bytes = Cbor::encodeArray({
+      player.getId(),
+      player.getScreenName(),
+      player.getAvatar(),
+      false,
+      player.getTotalGameTime(),
+    });
+    broadcast("AddObserver", bytes);
+  }
+
   observers.push_back(player.getConnId());
   player.setRoom(*this);
 
-  auto thread = this->thread().lock();
-  thread->addObserver(player.getConnId(), id);
-  pushRequest(fmt::format("{},observe", player.getId()));
+  if (isStarted()) {
+    auto thread = this->thread().lock();
+    thread->addObserver(player.getConnId(), id);
+    pushRequest(fmt::format("{},observe", player.getId()));
+  } else {
+    auto cbuf = (cbor_data)settings.data();
+    auto len = settings.size();
+    struct cbor_load_result load_result;
+    auto settings_map = cbor_load(cbuf, len, &load_result);
+    if (load_result.error.code != CBOR_ERR_NONE || !cbor_isa_map(settings_map)) {
+      cbor_decref(&settings_map);
+      auto buf = Cbor::encodeArray({ (int)capacity, timeout });
+      buf.data()[0] += 1;
+      player.doNotify("EnterRoom", buf + settings);
+      auto owner = um.findPlayerByConnId(m_owner_conn_id).lock();
+      if (owner) {
+        player.doNotify("RoomOwner", Cbor::encodeArray({ owner->getId() }));
+      }
+      return;
+    }
+
+    size_t orig_size = cbor_map_size(settings_map);
+    auto new_map = cbor_new_definite_map(orig_size + 3);
+    auto pairs = cbor_map_handle(settings_map);
+    for (size_t i = 0; i < orig_size; i++) {
+      [[maybe_unused]] auto ok = cbor_map_add(new_map, pairs[i]);
+    }
+
+    auto player_arr = cbor_new_definite_array(players.size());
+    for (auto connId : players) {
+      auto p = um.findPlayerByConnId(connId).lock();
+      if (!p) continue;
+      auto entry = cbor_new_definite_array(6);
+      [[maybe_unused]] auto ok1 = cbor_array_push(entry, cbor_move(make_cbor_int(p->getId())));
+      [[maybe_unused]] auto ok2 = cbor_array_push(entry, cbor_move(cbor_build_string(p->getScreenName().c_str())));
+      [[maybe_unused]] auto ok3 = cbor_array_push(entry, cbor_move(cbor_build_string(p->getAvatar().c_str())));
+      [[maybe_unused]] auto ok4 = cbor_array_push(entry, cbor_move(cbor_build_bool(p->isReady())));
+      [[maybe_unused]] auto ok5 = cbor_array_push(entry, cbor_move(make_cbor_int(p->getTotalGameTime())));
+      [[maybe_unused]] auto ok6 = cbor_array_push(entry, cbor_move(cbor_build_bool(p->getConnId() == m_owner_conn_id)));
+      [[maybe_unused]] auto ok7 = cbor_array_push(player_arr, cbor_move(entry));
+    }
+
+    auto observer_arr = cbor_new_definite_array(observers.size());
+    for (auto connId : observers) {
+      auto p = um.findPlayerByConnId(connId).lock();
+      if (!p) continue;
+      auto entry = cbor_new_definite_array(5);
+      [[maybe_unused]] auto ok1 = cbor_array_push(entry, cbor_move(make_cbor_int(p->getId())));
+      [[maybe_unused]] auto ok2 = cbor_array_push(entry, cbor_move(cbor_build_string(p->getScreenName().c_str())));
+      [[maybe_unused]] auto ok3 = cbor_array_push(entry, cbor_move(cbor_build_string(p->getAvatar().c_str())));
+      [[maybe_unused]] auto ok4 = cbor_array_push(entry, cbor_move(cbor_build_bool(false)));
+      [[maybe_unused]] auto ok5 = cbor_array_push(entry, cbor_move(make_cbor_int(p->getTotalGameTime())));
+      [[maybe_unused]] auto ok6 = cbor_array_push(observer_arr, cbor_move(entry));
+    }
+
+    [[maybe_unused]] auto ok_1 = cbor_map_add(new_map, { cbor_move(cbor_build_string("isObserver")), cbor_move(cbor_build_bool(true)) });
+    [[maybe_unused]] auto ok_2 = cbor_map_add(new_map, { cbor_move(cbor_build_string("_players")), cbor_move(player_arr) });
+    [[maybe_unused]] auto ok_3 = cbor_map_add(new_map, { cbor_move(cbor_build_string("_observers")), cbor_move(observer_arr) });
+
+    unsigned char *serialized = NULL;
+    size_t serialized_size = 0;
+    cbor_serialize_alloc(new_map, &serialized, &serialized_size);
+
+    if (serialized && serialized_size > 0) {
+      auto buf = Cbor::encodeArray({ (int)capacity, timeout });
+      buf.data()[0] += 1;
+      player.doNotify("EnterRoom", buf + std::string((char*)serialized, serialized_size));
+      free(serialized);
+    }
+
+    cbor_decref(&settings_map);
+    cbor_decref(&new_map);
+
+    auto owner = um.findPlayerByConnId(m_owner_conn_id).lock();
+    if (owner) {
+      player.doNotify("RoomOwner", Cbor::encodeArray({ owner->getId() }));
+    }
+  }
 }
 
 void Room::removeObserver(ServerPlayer &player) {
@@ -362,10 +482,14 @@ void Room::removeObserver(ServerPlayer &player) {
     }));
   }
 
-  pushRequest(fmt::format("{},leave", player.getId()));
+  if (isStarted()) {
+    pushRequest(fmt::format("{},leave", player.getId()));
 
-  auto thread = this->thread().lock();
-  if (thread) thread->removeObserver(player.getId(), id);
+    auto thread = this->thread().lock();
+    if (thread) thread->removeObserver(player.getId(), id);
+  } else {
+    broadcast("RemoveObserver", Cbor::encodeArray({ player.getId() }));
+  }
 }
 
 bool Room::hasObserver(ServerPlayer &player) const {
@@ -683,7 +807,7 @@ void Room::_gameOver() {
 void Room::detectSameIpAndDevice() {
   auto &um = Server::instance().user_manager();
 
-  std::unordered_map<std::string_view, std::vector<std::string_view>> uuidList, ipList;
+  std::unordered_map<std::string, std::vector<std::string>> uuidList, ipList;
   for (auto pConnId : players) {
     auto p = um.findPlayerByConnId(pConnId).lock();
     if (!p) continue;
@@ -692,9 +816,9 @@ void Room::detectSameIpAndDevice() {
     p->startGameTimer();
 
     if (!p->isOnline()) continue;
-    auto uuid = p->getUuid();
-    auto ip = p->getRouter().getSocket()->peerAddress();
-    auto pname = p->getScreenName();
+    auto uuid = std::string(p->getUuid());
+    auto ip = std::string(p->getRouter().getSocket()->peerAddress());
+    auto pname = std::string(p->getScreenName());
     if (!uuid.empty()) {
       uuidList[uuid].push_back(pname);
     }
@@ -703,7 +827,7 @@ void Room::detectSameIpAndDevice() {
     }
   }
 
-  static auto join = [](const std::vector<std::string_view>& vec, const std::string_view &spliter) {
+  static auto join = [](const std::vector<std::string>& vec, const std::string_view &spliter) {
     std::string result;
     for (size_t i = 0; i < vec.size(); ++i) {
       if (i != 0) result += spliter;
@@ -715,14 +839,14 @@ void Room::detectSameIpAndDevice() {
   for (const auto& [ip, names] : ipList) {
     if (names.size() <= 1) continue;
     auto warn = fmt::format("*WARN* Same IP address: [{}]", join(names, ", "));
-    doBroadcastNotify(getPlayers(), "ServerMessage", warn);
+    broadcast("ServerMessage", warn);
     spdlog::info(warn);
   }
 
   for (const auto& [uuid, names] : uuidList) {
     if (names.size() <= 1) continue;
     auto warn = fmt::format("*WARN* Same device id: [{}]", join(names, ", "));
-    doBroadcastNotify(getPlayers(), "ServerMessage", warn);
+    broadcast("ServerMessage", warn);
     spdlog::info(warn);
   }
 }
@@ -776,7 +900,7 @@ bool Room::isRejected(ServerPlayer &player) const {
 
 void Room::setPlayerReady(ServerPlayer &p, bool ready) {
   p.setReady(ready);
-  doBroadcastNotify(players, "ReadyChanged", Cbor::encodeArray({ p.getId(), ready }));
+  broadcast("ReadyChanged", Cbor::encodeArray({ p.getId(), ready }));
 }
 
 // ------------------------------------------------
@@ -795,7 +919,7 @@ void Room::quitRoom(ServerPlayer &player, const Packet &) {
 
 void Room::addRobotRequest(ServerPlayer &player, const Packet &) {
   auto &conf = Server::instance().config();
-  if (find(conf.disabledFeatures, "AddRobot") == conf.disabledFeatures.end())
+  if (find(conf.disabledFeatures, std::string_view("AddRobot")) == conf.disabledFeatures.end())
     addRobot(player);
 }
 
@@ -808,6 +932,7 @@ void Room::kickPlayer(ServerPlayer &player, const Packet &pkt) {
   auto &um = Server::instance().user_manager();
   auto &rm = Server::instance().room_manager();
   auto p = um.findPlayer(i).lock();
+  if (!p) p = findObserver(i).lock();
   if (!p) return;
   if (isStarted()) return;
   auto room = p->getRoom().lock();
@@ -895,7 +1020,7 @@ void Room::changeRoom(ServerPlayer &player, const Packet &packet) {
   setTimeout(newtimeout);
   setSettings(newsettings);
 
-  doBroadcastNotify(players, "ChangeRoom", packet.cborData);
+  broadcast("ChangeRoom", packet.cborData);
 
   // 按官服 修改配置后所有人重新准备
   auto &um = Server::instance().user_manager();
@@ -903,6 +1028,69 @@ void Room::changeRoom(ServerPlayer &player, const Packet &packet) {
     auto p = um.findPlayerByConnId(pid).lock();
     if (!p) continue;
     p->setReady(false);
+  }
+}
+
+void Room::switchToPlayer(ServerPlayer &player, const Packet &) {
+  if (isStarted()) return;
+  if (observers.empty() || find(observers, player.getConnId()) == observers.end()) return;
+  if (isFull()) {
+    player.doNotify("ErrorMsg", "Room is full");
+    return;
+  }
+
+  observers.erase(find(observers, player.getConnId()));
+  players.push_back(player.getConnId());
+  broadcast("SwitchToPlayer", Cbor::encodeArray({ player.getId() }));
+  player.setReady(false);
+
+  auto mode = gameMode;
+  if (player.getLastGameMode() != mode) {
+    player.setLastGameMode(std::string(mode));
+    updatePlayerGameData(player.getId(), mode);
+  }
+
+  auto gd = player.getGameData();
+  broadcast("UpdateGameData", Cbor::encodeArray({
+    player.getId(),
+    gd[0], gd[1], gd[2],
+  }));
+}
+
+void Room::switchToObserver(ServerPlayer &player, const Packet &) {
+  if (isStarted()) return;
+  if (find(players, player.getConnId()) == players.end()) return;
+
+  auto &um = Server::instance().user_manager();
+
+  std::weak_ptr<ServerPlayer> candidate;
+  if (player.getConnId() == m_owner_conn_id) {
+    for (auto connId : players) {
+      if (connId == player.getConnId()) continue;
+      auto p = um.findPlayerByConnId(connId).lock();
+      if (!p) continue;
+      if (p->getState() == Player::Robot) continue;
+      if (!candidate.lock()) {
+        candidate = p;
+        break;
+      }
+    }
+
+    auto cp = candidate.lock();
+    if (!cp) {
+      player.doNotify("ErrorMsg", "Room owner cannot spectate: no eligible player");
+      return;
+    }
+  }
+
+  players.erase(find(players, player.getConnId()));
+  observers.push_back(player.getConnId());
+  broadcast("SwitchToObserver", Cbor::encodeArray({ player.getId() }));
+  player.setReady(false);
+
+  if (player.getConnId() == m_owner_conn_id) {
+    auto cp = candidate.lock();
+    if (cp) setOwner(*cp);
   }
 }
 
@@ -1084,6 +1272,8 @@ void Room::handlePacket(ServerPlayer &sender, const Packet &packet) {
     {"KickPlayer", &Room::kickPlayer},
     {"Ready", &Room::ready},
     {"StartGame", &Room::startGame},
+    {"SwitchToPlayer", &Room::switchToPlayer},
+    {"SwitchToObserver", &Room::switchToObserver},
     {"Trust", &Room::trust},
     {"ChangeRoom", &Room::changeRoom},
     {"Chat", &Room::chat},

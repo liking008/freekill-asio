@@ -294,7 +294,7 @@ void ServerPlayer::onStateChanged() {
   auto thread = room->thread().lock();
   if (thread) thread->setPlayerState(connId, getId(), room->getId());
 
-  room->doBroadcastNotify(room->getPlayers(), "NetStateChanged",
+  room->broadcast("NetStateChanged",
                           Cbor::encodeArray({ getId(), getStateString() }));
 
   auto state = getState();
@@ -309,7 +309,7 @@ void ServerPlayer::onReadyChanged() {
   auto room = dynamic_pointer_cast<Room>(getRoom().lock());
   if (!room) return;
 
-  room->doBroadcastNotify(room->getPlayers(), "ReadyChanged",
+  room->broadcast("ReadyChanged",
                           Cbor::encodeArray({ getId(), isReady() }));
 }
 

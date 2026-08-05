@@ -58,6 +58,9 @@ public:
   bool hasObserver(ServerPlayer &player) const;
   const std::vector<int> &getObservers() const;
 
+  void broadcast(const std::string_view &command, const std::string_view &data);
+  std::weak_ptr<ServerPlayer> findObserver(int playerId) const;
+
   int getTimeout() const;
   void setTimeout(int timeout);
   void delay(int ms);
@@ -169,6 +172,8 @@ private:
   void kickPlayer(ServerPlayer &, const Packet &);
   void ready(ServerPlayer &, const Packet &);
   void startGame(ServerPlayer &, const Packet &);
+  void switchToPlayer(ServerPlayer &, const Packet &);
+  void switchToObserver(ServerPlayer &, const Packet &);
   void trust(ServerPlayer &, const Packet &);
   void changeRoom(ServerPlayer &, const Packet &);
 

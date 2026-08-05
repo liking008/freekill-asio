@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.18)
 
-project(freekill-asio VERSION 0.1.14)
+project(freekill-asio VERSION 0.1.15)
 add_definitions(-DFK_VERSION=\"${CMAKE_PROJECT_VERSION}\")
 
 if (DEFINED RPC_DEBUG)
@@ -27,7 +27,7 @@ find_package(ZLIB REQUIRED)
 find_package(PkgConfig)
 pkg_search_module(libgit2 REQUIRED libgit2)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(src)

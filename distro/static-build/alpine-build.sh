@@ -184,19 +184,19 @@ if [ ! -d "$ROOT_DIR/freekill-asio" ]; then
   echo '[+] 克隆 freekill-asio'
   cd "$ROOT_DIR"
   git clone https://github.com/liking008/freekill-asio
+else
+  echo '[+] 更新 freekill-asio'
+  cd "$ROOT_DIR"/freekill-asio
+  git pull
 fi
 
-if [ ! -f "$ROOT_DIR/freekill-asio/build/freekill-asio" ]; then
-  echo '[+] 静态编译 freekill-asio'
-  cd "$ROOT_DIR/freekill-asio"
-  mkdir -p build && cd build
-  cmake .. --toolchain=../distro/static-build/alpine_static.cmake 2&>/dev/null || true
-  cmake .. --toolchain=../distro/static-build/alpine_static.cmake || true
-  make -j$NPROC
-  cd "$ROOT_DIR"
-else
-  echo '[*] freekill-asio 已编译，跳过...'
-fi
+echo '[+] 静态编译 freekill-asio'
+cd "$ROOT_DIR/freekill-asio"
+mkdir -p build && cd build
+cmake .. --toolchain=../distro/static-build/alpine_static.cmake 2&>/dev/null || true
+cmake .. --toolchain=../distro/static-build/alpine_static.cmake || true
+make -j$NPROC
+cd "$ROOT_DIR"
 
 # -------------------------------
 # 打包发布
@@ -211,8 +211,11 @@ cd "$DIST_DIR"
 
 cp -r "$ROOT_DIR/freekill-asio/packages" .
 rm -f packages/.gitignore
+rm -f packages/*.db
 
 cp -r "$ROOT_DIR/freekill-asio/server" .
+rm -f server/*.db
+rm -f server/rsa*
 cp -r "$ROOT_DIR/freekill-asio/freekill.server.config.json.example" .
 
 # 复制 CA 证书

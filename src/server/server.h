@@ -13,6 +13,7 @@ class RoomThread;
 class TaskManager;
 
 class Shell;
+class AdminHttpServer;
 class Sqlite3;
 class DbThread;
 
@@ -107,6 +108,7 @@ private:
   std::unique_ptr<TaskManager> m_task_manager;
 
   std::unique_ptr<Shell> m_shell;
+  std::unique_ptr<AdminHttpServer> m_admin_http;
 
   io_context *main_io_ctx = nullptr;
 

@@ -129,7 +129,7 @@ void RoomThread::shutdown() {
     room->decreaseRefCount();
 
     room->setOutdated();
-    room->doBroadcastNotify(room->getPlayers(), "ErrorDlg", "Server Internal Error");
+    room->broadcast("ErrorDlg", "Server Internal Error");
     rm.removeRoom(roomId);
   }
 }
